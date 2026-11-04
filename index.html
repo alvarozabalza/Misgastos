@@ -308,9 +308,6 @@ const parseAmt=v=>{const n=parseFloat(String(v).replace(/\s|€/g,'').replace(',
 const clone=o=>JSON.parse(JSON.stringify(o));
 
 const DEFAULTS={budget:0,recurring:[],categories:[
-  {id:'comida-trabajo',name:'Comida trabajo',icon:'🥗',color:2,price:8},
-  {id:'cafe-trabajo',name:'Café trabajo',icon:'☕',color:3,price:1},
-  {id:'agua-trabajo',name:'Agua trabajo',icon:'💧',color:8,price:0.5},
   {id:'gasolina',name:'Gasolina',icon:'⛽',color:0},
   {id:'cena',name:'Cena',icon:'🍽️',color:1},
   {id:'caprichos',name:'Caprichos',icon:'🎁',color:4},
