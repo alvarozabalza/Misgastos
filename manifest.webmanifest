@@ -1,0 +1,16 @@
+{
+  "name": "Mis Gastos",
+  "short_name": "Mis Gastos",
+  "description": "Apunta tus gastos en segundos y mira en qué se te va el dinero cada mes.",
+  "lang": "es",
+  "start_url": "./#anadir",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF1F6",
+  "theme_color": "#2F44C9",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
