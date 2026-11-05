@@ -114,6 +114,7 @@ h2{font-size:17px;font-weight:700}
 .sav div:last-child b{font-size:22px}
 .sav div{background:var(--bg);border-radius:10px;padding:9px 10px;min-width:0}
 .sav b{display:block;font-family:var(--display);font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.savcard{background:color-mix(in srgb, var(--good) 8%, var(--surface));border-color:color-mix(in srgb, var(--good) 30%, var(--line))}
 .pos{color:var(--good)} .neg{color:var(--danger)}
 .hist{display:flex;flex-direction:column;gap:10px}
 .hrow{display:grid;grid-template-columns:44px 1fr auto;gap:4px 10px;align-items:center}
@@ -221,6 +222,10 @@ h2{font-size:17px;font-weight:700}
         <div><span class="label">Fijos</span><b class="num" id="m-fix">0 €</b></div>
       </div>
       <div id="m-budget"></div>
+    </div>
+    <div class="card stack savcard" style="gap:8px">
+      <div class="row between"><h2>Tus ahorros</h2><button class="linkbtn" id="m-editsav">Cambiar</button></div>
+      <div id="m-savings"></div>
     </div>
     <div class="card stack" style="gap:10px">
       <div class="row between"><h2>Ingresos y ahorro</h2><button class="linkbtn" id="m-addinc">+ Añadir ingreso</button></div>
@@ -343,7 +348,7 @@ const S={settings:clone(DEFAULTS),settingsLoaded:false,months:{},fresh:{},subs:{
   draft:{amt:'',cat:null,date:today(),dmode:0},tab:'anadir'};
 let store=null;
 const normMonth=d=>({items:Array.isArray(d&&d.items)?d.items:[],skip:Array.isArray(d&&d.skip)?d.skip:[],income:Array.isArray(d&&d.income)?d.income:[]});
-const normSettings=d=>{const s=Object.assign(clone(DEFAULTS),d||{});if(!Array.isArray(s.categories)||!s.categories.length)s.categories=clone(DEFAULTS.categories);if(!Array.isArray(s.recurring))s.recurring=[];return s};
+const normSettings=d=>{const s=Object.assign(clone(DEFAULTS),d||{});if(!Array.isArray(s.categories)||!s.categories.length)s.categories=clone(DEFAULTS.categories);if(!Array.isArray(s.recurring))s.recurring=[];if(!s.savings||typeof s.savings!=='object')s.savings=null;return s};
 const M=k=>S.months[k]||{items:[],skip:[],income:[]};
 const catOf=id=>S.settings.categories.find(c=>c.id===id)||(id==='fijo'?{id,name:'Fijo',icon:'🔁',color:7}:{id,name:'Sin categoría',icon:'❔',color:7});
 const cc=c=>`--cc:var(--c${(c.color||0)%10})`;
@@ -461,7 +466,7 @@ function renderMonth(){
     let extra='';if(isCur){const dl=daysIn(k)-new Date().getDate()+1;const left=b-st.v;extra=left>0?` · te quedan ${fmt(left)} (${fmt(left/dl)} al día)`:` · te has pasado ${fmt(-left)}`}
     $('#m-budget').innerHTML=`<div class="small"><b>${Math.round(pct)}%</b> del presupuesto de ${fmt0(b)}${extra}</div><div class="meter ${cls}"><i style="width:${Math.min(100,pct)}%"></i></div>`;
   }else $('#m-budget').innerHTML='';
-  renderIncome(k,st);renderHist(k);
+  renderSavings(k);renderIncome(k,st);renderHist(k);
   renderChart(k,st.items);
   // categories
   const by={};st.items.forEach(i=>{by[i.cat]=(by[i.cat]||0)+(+i.amt||0)});
@@ -539,6 +544,50 @@ function editItem(id,k){
       if(nk===k){m.items=m.items.map(x=>x.id===id?upd:x);saveMonth(k)}
       else{m.items=m.items.filter(x=>x.id!==id);const m2=await monthForWrite(nk);m2.items.push(upd);saveMonth(k);saveMonth(nk)}
       close();render();toast('Cambios guardados')};
+  });
+}
+const fetching=new Set();
+function ensureMonths(keys){
+  const miss=keys.filter(k=>!S.months[k]&&!fetching.has(k));if(!miss.length||!store)return;
+  miss.forEach(k=>fetching.add(k));
+  Promise.all(miss.map(k=>store.get('months/'+k).then(d=>{if(!S.months[k])S.months[k]=normMonth(d)}).catch(()=>{}))).then(()=>{miss.forEach(k=>fetching.delete(k));render()});
+}
+function savingsAt(k){
+  const sv=S.settings.savings;if(!sv||!sv.month||k<sv.month)return null;
+  const keys=[];for(let m=sv.month;m<=k;m=addMonths(m,1))keys.push(m);
+  ensureMonths(keys);
+  let total=+sv.base||0;const noInc=[];
+  keys.forEach(m=>{const ti=sum(M(m).income);total+=ti-stats(m).t;if(!ti)noInc.push(m)});
+  return {total,base:+sv.base||0,from:sv.month,noInc,loading:keys.some(m=>!S.months[m])};
+}
+function renderSavings(k){
+  const sv=S.settings.savings,el=$('#m-savings');
+  $('#m-editsav').hidden=!sv;
+  if(!sv){el.innerHTML=`<p class="small muted" style="margin:0">Dime cuánto tienes ahorrado y la app lo irá actualizando sola cada mes: suma lo que cobras y resta lo que gastas.</p><button class="save" id="m-setsav" style="margin-top:4px">Poner mis ahorros</button>`;return}
+  if(k<sv.month){el.innerHTML=`<p class="small muted" style="margin:0">Empezaste a contar tus ahorros en ${esc(monthName(sv.month))}.</p>`;return}
+  const r=savingsAt(k),isCur=k===mkey(today()),diff=r.total-r.base;
+  el.innerHTML=`<span class="label">${isCur?'Tienes ahora':'Al acabar '+esc(monthShort(k))}</span>
+    <div class="total num ${r.total<0?'neg':''}">${fmt(r.total)}</div>
+    <div class="small">Empezaste con <b>${fmt(r.base)}</b> en ${esc(monthShort(r.from))} · <b class="${diff>=0?'pos':'neg'}">${diff>=0?'+':''}${fmt(diff)}</b> desde entonces</div>
+    ${r.noInc.length?`<div class="banner small" data-tone="warn">Faltan los ingresos de ${esc(r.noInc.map(monthShort).join(', '))}: hasta que los apuntes, solo se restan los gastos.</div>`:''}`;
+}
+function editSavings(){
+  const sv=S.settings.savings,cur=mkey(today());
+  openSheet(`<h2>Tus ahorros</h2>
+    <p class="small muted" style="margin:0">Pon lo que tenías ahorrado al empezar el mes que elijas, antes de cobrar y de gastar nada ese mes. Desde ahí la app suma tus ingresos y resta tus gastos.</p>
+    <div class="grid2"><label class="field"><span class="label">Ahorrado</span><input id="v-amt" inputmode="decimal" placeholder="0,00" value="${sv?String(sv.base).replace('.',','):''}"></label>
+    <label class="field"><span class="label">Al empezar</span><input id="v-month" type="month" max="${cur}" value="${sv?sv.month:cur}"></label></div>
+    <div class="btnrow">${sv?'<button class="ghost danger" id="v-del">Quitar</button>':'<button class="ghost" id="v-cancel">Cancelar</button>'}<button class="save" id="v-save">Guardar</button></div>`,(sc,close)=>{
+    $('#v-amt',sc).focus();
+    const c=$('#v-cancel',sc);if(c)c.onclick=close;
+    let armed=false;const d=$('#v-del',sc);
+    if(d)d.onclick=async()=>{if(!armed){armed=true;d.textContent='¿Seguro? Toca otra vez';return}
+      await settingsForWrite();S.settings.savings=null;saveSettings();close();render();toast('Ahorros quitados')};
+    $('#v-save',sc).onclick=async()=>{
+      const base=parseAmt($('#v-amt',sc).value);let month=$('#v-month',sc).value||cur;
+      if(!isFinite(base)){$('#v-amt',sc).focus();toast('Escribe cuánto tienes ahorrado, por ejemplo 12000');return}
+      if(!/^\d{4}-\d{2}$/.test(month))month=cur;if(month>cur)month=cur;
+      await settingsForWrite();S.settings.savings={base,month};saveSettings();close();render();toast('Ahorros guardados')};
   });
 }
 function renderIncome(k,st){
@@ -644,12 +693,14 @@ $('#save').addEventListener('click',()=>addExpense());
 document.addEventListener('click',e=>{
   const g=e.target.closest('[data-go]');if(g){go(g.dataset.go);return}
   const ed=e.target.closest('[data-edit]');if(ed){editItem(ed.dataset.edit,ed.dataset.month);return}
+  if(e.target.closest('#m-setsav')){editSavings();return}
   const ic=e.target.closest('[data-inc]');if(ic){editIncome(ic.dataset.inc);return}
   const rc=e.target.closest('[data-rec]');if(rc){editRec(rc.dataset.rec);return}
   const f=e.target.closest('[data-filter]');if(f){S.filter=S.filter===f.dataset.filter?null:f.dataset.filter;renderMonth();return}
   const sk=e.target.closest('[data-skip]');if(sk){(async()=>{const k=S.view;const m=await monthForWrite(k);const id=sk.dataset.skip;m.skip=m.skip.includes(id)?m.skip.filter(x=>x!==id):[...m.skip,id];saveMonth(k);render()})();return}
 });
 $('#m-addinc').onclick=()=>editIncome(null);
+$('#m-editsav').onclick=editSavings;
 $('#m-clear').onclick=()=>{S.filter=null;renderMonth()};
 $('#prevm').onclick=()=>{S.view=addMonths(S.view,-1);S.filter=null;syncSubs();renderMonth()};
 $('#nextm').onclick=()=>{if(S.view<mkey(today())){S.view=addMonths(S.view,1);S.filter=null;syncSubs();renderMonth()}};
